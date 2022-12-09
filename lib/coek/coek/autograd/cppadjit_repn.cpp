@@ -275,6 +275,47 @@ void CppADJIT_Repn::initialize(bool _sparse_JH)
     ADfc.optimize();
 
     //
+    // WEH - Create DLL/SO here
+    //
+    ADfc.function_name_set("ADfc");
+    std::string c_type    = "double";
+    std::string csrc_file = "autograd_cppadjit.c";
+    std::ofstream ofs;
+    ofs.open(csrc_file , std::ofstream::out);
+    f.to_csrc(ofs, c_type);
+    ofs.close();
+    //
+    // Load DLL/SO
+    //
+    std::string dll_file = "autograd_cppadjit" DLL_EXT;
+    CPPAD_TESTVECTOR( std::string) csrc_files(1);
+    csrc_files[0] = csrc_file;
+    std::map< std::string, std::string > options;
+    std::string err_msg = CppAD::create_dll_lib(dll_file, csrc_files, options);
+    if( err_msg != "" ) {
+        std::cerr << "autograd_cppadjit: err_msg = " << err_msg << "\n";
+        return; // TODO - Throw exception here
+        }
+    //
+    // Create linker
+    //
+    CppAD::link_dll_lib dll_linker(dll_file, err_msg);
+    if( err_msg != "" )
+    {   std::cerr << "jit_dynamic: err_msg = " << err_msg << "\n";
+        return; // TODO - Throw exception here
+    }
+    //
+    // Get pointer to the function
+    //
+    std::string function_name = "cppad_jit_f";
+    void* void_ptr = dll_linker(function_name, err_msg);
+    if( err_msg != "" )
+    {   std::cerr << "dynamic: err_msg = " << err_msg << "\n";
+        return; // TODO - Throw exception here
+    }
+    CppAD::jit_double f_ptr = reinterpret_cast<CppAD::jit_double>(void_ptr);
+    
+    //
     // Setup temporary arrays used during computations
     //
     size_t nfc = nf + nc;
