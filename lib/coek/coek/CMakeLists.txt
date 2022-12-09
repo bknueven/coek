@@ -107,6 +107,7 @@ endif()
 #
 if(with_cppad)
     list(APPEND sources
+                autograd/visitor_to_cppad.cpp
                 autograd/cppad_repn.cpp)
     list(APPEND coek_compile_options "-DWITH_CPPAD")
     list(APPEND coek_include_directories ${CMAKE_INSTALL_PREFIX}/include)

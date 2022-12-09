@@ -12,6 +12,15 @@
 
 namespace coek {
 
+// Defined in visitor_to_cppad.cpp
+void build_expression(const expr_pointer_t& root, std::vector<CppAD::AD<double> >& ADvars,
+                                  CppAD::AD<double>& ans,
+                                  std::unordered_map<VariableRepn, size_t>& _used_variables,
+                                  std::map<VariableRepn, size_t>& fixed_variables,
+                                  std::map<ParameterRepn, size_t>& parameters,
+                                  std::vector<CppAD::AD<double> >& dynamic_params);
+
+
 CppAD_Repn::CppAD_Repn(Model& model) : NLPModelRepn(model)
 {
     nx = 0;
@@ -123,12 +132,6 @@ void CppAD_Repn::compute_dc(std::vector<double>& dc, size_t i)
 
 void CppAD_Repn::compute_H(std::vector<double>& w, std::vector<double>& H)
 {
-#if 0
-if (invalid_fc) {
-    fc_cache = ADfc.Forward(0, currx);
-    invalid_fc = false;
-    }
-#endif
     if (sparse_JH) {
         //
         // Sparse Hessian
@@ -254,13 +257,13 @@ void CppAD_Repn::initialize(bool _sparse_JH)
     try {
         size_t nb = 0;
         for (auto& it : model.repn->objectives) {
-            build_expression(it.repn, ADvars, ADrange[nb], _used_variables);
+            build_expression(it.repn, ADvars, ADrange[nb], _used_variables, fixed_variables, parameters, dynamic_params);
             nb++;
         }
 
         nb = 0;
         for (auto& it : model.repn->constraints) {
-            build_expression(it.repn, ADvars, ADrange[nf + nb], _used_variables);
+            build_expression(it.repn, ADvars, ADrange[nf + nb], _used_variables, fixed_variables, parameters, dynamic_params);
             nb++;
         }
     }
@@ -295,35 +298,6 @@ void CppAD_Repn::initialize(bool _sparse_JH)
                 // Use forward mode to compute sparsity
                 //
 
-#if 0
-            // number of bits that are packed into one unit in vectorBool
-            size_t n_column = CppAD::vectorBool::bit_per_unit();
-
-            // sparsity patterns for current columns
-            CppAD::vectorBool r(nx * n_column), s(nc * n_column);
-
-            // compute the sparsity pattern n_column columns at a time
-            size_t n_loop = (nx - 1) / n_column + 1;
-            for(size_t i_loop = 0; i_loop < n_loop; i_loop++) {   // starting column index for this iteration
-                size_t i_column = i_loop * n_column;
-
-                // pattern that picks out the appropriate columns
-                for(size_t i = 0; i < nx; i++) {
-                    for(size_t j = 0; j < n_column; j++)
-                        r[i*n_column + j] = (i == i_column + j);
-                    }
-
-                s = ADfc.ForSparseJac(n_column, r);
-
-                // fill in the corresponding columns of total_sparsity
-                for(size_t i = 0; i < nc; i++) {
-                    for(size_t j = 0; j < n_column; j++) {
-                        if( i_column + j < nx  )
-                            jac_pattern[i*nx  + i_column + j] = s[i*n_column + j];
-                        }
-                    }
-                }
-#else
                 // Identity marix
                 CppAD::vectorBool r(nx * nx);
                 for (size_t i = 0; i < nx; i++)
@@ -341,40 +315,12 @@ void CppAD_Repn::initialize(bool _sparse_JH)
                 for (size_t i = nf; i < nfc; i++) {
                     for (size_t j = 0; j < nx; j++) jac_pattern[i * nx + j] = s[i * nx + j];
                 }
-#endif
             }
             else {
                 //
                 // Use reverse mode to compute sparsity
                 //
 
-#if 0
-            // number of bits that are packed into one unit in vectorBool
-            size_t n_row = CppAD::vectorBool::bit_per_unit();
-
-            // sparsity patterns for current rows
-            CppAD::vectorBool r(n_row * nc), s(n_row * nx);
-
-            // compute the sparsity pattern n_row row at a time
-            size_t n_loop = (nc - 1) / n_row + 1;
-            for(size_t i_loop = 0; i_loop < n_loop; i_loop++) {   // starting row index for this iteration
-                size_t i_row = i_loop * n_row;
-
-                // pattern that picks out the appropriate rows
-                for(size_t i = 0; i < n_row; i++) {
-                    for(size_t j = 0; j < nc; j++)
-                        r[i*nc + j] = (i_row + i ==  j);
-                    }
-                s = ADfc.RevSparseJac(n_row, r);
-
-                // fill in correspoding rows of total sparsity
-                for(size_t i = 0; i < n_row; i++) {
-                    for(size_t j = 0; j < nx; j++)
-                        if( i_row + i < nc )
-                            jac_pattern[(i_row + i)*nx + j] = s[i*nx + j];
-                    }
-                }
-#else
                 // sparsity patterns for current rows
                 CppAD::vectorBool r(nfc * nfc);  //, s(nx * nc);
 
@@ -390,7 +336,6 @@ void CppAD_Repn::initialize(bool _sparse_JH)
                 for (size_t i = nf; i < nfc; i++) {
                     for (size_t j = 0; j < nx; j++) jac_pattern[i * nx + j] = s[i * nx + j];
                 }
-#endif
             }
             //
             // Row-major indices for Jacobian of c(x).
@@ -432,45 +377,6 @@ void CppAD_Repn::initialize(bool _sparse_JH)
         size_t nfc = nf + nc;
         hes_pattern.resize(nx * nx);
 
-#if 0
-    // sparsity patterns for current columns
-    CppAD::vectorBool r(nx * n_column), h(nx * n_column);
-
-    // number of bits that are packed into one unit in vectorBool
-    size_t n_column = CppAD::vectorBool::bit_per_unit();
-
-    // sparsity pattern for range space of function
-    CppAD::vectorBool s(m);
-    for(size_t i = 0; i < m; i++)
-        s[i] = true;
-
-    // compute the sparsity pattern n_column columns at a time
-    size_t n_loop = (nx - 1) / n_column + 1;
-    for(size_t i_loop = 0; i_loop < n_loop; i_loop++) {
-        // starting column index for this iteration
-        size_t i_column = i_loop * n_column;
-
-        // pattern that picks out the appropriate columns
-        for(size_t i = 0; i < nx; i++) {
-            for(size_t j = 0; j < n_column; j++)
-                r[i * n_column + j] = (i == i_column + j);
-            }
-        ////adfun_.ForSparseJac(n_column, r);
-
-        // sparsity pattern corresponding to paritls w.r.t. (theta, u)
-        // of partial w.r.t. the selected columns
-        bool transpose = true;
-        ////h = adfun_.RevSparseHes(n_column, s, transpose);
-
-        // fill in the corresponding columns of total_sparsity
-        for(size_t i = 0; i < nx; i++) {
-            for(size_t j = 0; j < n_column; j++) {
-                if( i_column + j < nx )
-                    hes_pattern[i * nx + i_column + j] = h[i * n_column + j];
-                }
-            }
-        }
-#else
         // Identity matrix
         CppAD::vectorBool r(nx * nx);  //, h(nx * n_column);
         for (size_t i = 0; i < nx; i++)
@@ -495,7 +401,6 @@ void CppAD_Repn::initialize(bool _sparse_JH)
             // TODO - Why is CppAD looking at the pattern in a non-symmetric manner?
             for (size_t j = i + 1; j < nx; j++) hes_pattern[i * nx + j] = 0;
         }
-#endif
         //
         // Set row and column indices for Lower triangle of Hessian
         // of Lagragian.  These indices are in row major order.
@@ -767,9 +672,12 @@ void visit_expression(expr_pointer_t& expr, VisitorData& data, CppAD::AD<double>
 
 }  // namespace
 
-void CppAD_Repn::build_expression(expr_pointer_t root, std::vector<CppAD::AD<double> >& ADvars,
+void build_expression(expr_pointer_t root, std::vector<CppAD::AD<double> >& ADvars,
                                   CppAD::AD<double>& ans,
-                                  std::unordered_map<VariableRepn, size_t>& _used_variables)
+                                  std::unordered_map<VariableRepn, size_t>& _used_variables,
+                                  std::map<VariableRepn, size_t>& fixed_variables,
+                                  std::map<ParameterRepn, size_t>& parameters,
+                                  std::vector<CppAD::AD<double> >& dynamic_params)
 {
     VisitorData data(ADvars, _used_variables, fixed_variables, parameters, dynamic_params);
     visit_expression(root, data, ans);
