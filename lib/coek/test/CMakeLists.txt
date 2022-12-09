@@ -31,7 +31,8 @@ SET(sources
 if(with_cppad)
   MESSAGE("-- Building Test with AD:        CppAd")
   list(APPEND sources
-    test_autograd_cppad.cpp)
+    test_autograd_cppad.cpp
+    test_autograd_cppadjit.cpp)
 endif()
 
 include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/..)

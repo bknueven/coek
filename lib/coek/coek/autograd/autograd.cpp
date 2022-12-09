@@ -13,6 +13,7 @@
 
 #ifdef WITH_CPPAD
 #    include "cppad_repn.hpp"
+#    include "cppadjit_repn.hpp"
 #endif
 #include "unknownad_repn.hpp"
 
@@ -25,6 +26,7 @@ NLPModelRepn* create_NLPModelRepn(Model& model, const std::string& name)
 {
 #ifdef WITH_CPPAD
     if (name == "cppad") return new CppAD_Repn(model);
+    if (name == "cppad_jit") return new CppADJIT_Repn(model);
 #endif
 
     throw std::runtime_error("Unexpected NLP model type: " + name);
